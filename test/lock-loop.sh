@@ -7,7 +7,7 @@ cpu=$(grep -m1 "model name" /proc/cpuinfo)
 echo "guest ${cpu#*: }"
 service=shell/plugins/lock/Service.qml
 cp "$service" /tmp/Service.qml.orig
-for variant in red green regression; do
+for variant in green regression; do
   cp /tmp/Service.qml.orig "$service"
   if [[ $variant == "regression" ]]; then
     sed -i '0,/^  Component.onCompleted: {/s//  Component.onCompleted: {\n    var slowUntil = Date.now() + 1000\n    while (Date.now() < slowUntil) {}/' "$service"
@@ -16,9 +16,9 @@ for variant in red green regression; do
   else
     cp test/lock-$variant.sh test/shell.d/lock-appear-budget-test.sh
   fi
-  for i in 1 2 3; do
+  for i in 1 2 3 4; do
     out=$(bash test/shell.d/lock-appear-budget-test.sh 2>&1 || true)
-    echo "VARIANT=$variant run=$i | $(grep -oE "(ok|not ok) - lock (view|screen)[^;]*" <<<"$out" | tr '\n' ';' | cut -c1-330) | $(grep -oE "answered after [0-9]+ms[^.]*" <<<"$out" | head -1)"
+    echo "VARIANT=$variant run=$i | $(grep -oE "(ok|not ok) - lock (view|screen)[^;]*" <<<"$out" | tr '\n' ';' | sed "s/;/,/g" | cut -c1-330) | $(grep -oE "answered after [0-9]+ms[^.]*" <<<"$out" | head -1)"
   done
 done
 cp /tmp/Service.qml.orig "$service"
