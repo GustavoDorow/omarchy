@@ -14,6 +14,7 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/base-test.sh"
 
 require_quickshell "lock appear budget"
 require_comparable_speed "lock appear budget"
+echo "PROBE speed_percent=$SPEED_PERCENT" >&2
 
 READY_BUDGET_MS=$(( ${OMARCHY_LOCK_READY_BUDGET_MS:-750} * SPEED_PERCENT / 100 ))
 BUDGET_MS=$(( ${OMARCHY_LOCK_APPEAR_BUDGET_MS:-300} * SPEED_PERCENT / 100 ))
@@ -23,7 +24,7 @@ setup_scratch_shell
 
 # Probe: timestamped log with frame timing, and marks on the same clock.
 start_scratch_shell() {
-  (scratch_exec quickshell -p "$SCRATCH_ROOT/shell" --no-color --log-times --log-rules "qt.scenegraph.time.renderloop=true") >"$SCRATCH_LOG" 2>&1 &
+  (scratch_exec quickshell -p "$SCRATCH_ROOT/shell" --no-color --log-times) >"$SCRATCH_LOG" 2>&1 &
   SCRATCH_PID=$!
 }
 mark() { echo "PROBE $(date '+%F %T.%3N') MARK $*" >&2; }
@@ -90,8 +91,7 @@ for round in 1 2 3; do
     poll_start=$EPOCHREALTIME
     status=$(scratch_ipc lock status 2>&1 || true)
     poll_end=$EPOCHREALTIME
-    mark "round $round lock status took $(( (${poll_end/[.,]/} - ${poll_start/[.,]/}) / 1000 ))ms: ${status:0:60}"
-    if [[ $status == '{"locked":'* ]]; then
+      if [[ $status == '{"locked":'* ]]; then
       end=$EPOCHREALTIME
       ready_ms=$(( (${end/[.,]/} - ${launch_start/[.,]/}) / 1000 ))
       break
@@ -102,7 +102,6 @@ for round in 1 2 3; do
   [[ -n $ready_ms ]] || { sed -n '1,120p' "$SCRATCH_LOG" >&2; fail "lock service becomes available"; }
   if [[ -z $ready_best ]] || (( ready_ms < ready_best )); then ready_best=$ready_ms; fi
   mark "round $round ready_ms=$ready_ms"
-  if (( round == 1 )); then grep -vE "^\s*$" "$SCRATCH_LOG" | sed 's/^/PROBE LOG /' | cut -c1-260 >&2; fi
 
   wait_scratch_quiet
   elapsed=$(appear_ms) || { sed -n '1,120p' "$SCRATCH_LOG" >&2; fail "lock preview appears and hides cleanly"; }
