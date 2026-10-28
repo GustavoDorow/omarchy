@@ -107,12 +107,13 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          [[ -f out/run.log ]] || exit 0
-          {
-            echo '```'
-            sed -n '/^Skipped checks in/,$p' out/run.log
-            echo '```'
-          } >>"$GITHUB_STEP_SUMMARY"
+          if [[ -f out/run.log ]]; then
+            {
+              echo '```'
+              sed -n '/^Skipped checks in/,$p' out/run.log
+              echo '```'
+            } >>"$GITHUB_STEP_SUMMARY"
+          fi
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
