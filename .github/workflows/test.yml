@@ -56,16 +56,10 @@ jobs:
             curl -fsS --retry 3 -o "$file" "$unpacked$file"
           done
           url=$(jq -r .vm.url latest.json)
-          curl -fsS -o /dev/null -D - -r 0-0 "$url" | grep -iE '^(cf-cache-status|cf-ray):' | tee -a "$GITHUB_STEP_SUMMARY"
           started=$SECONDS
           aria2c --quiet -x 16 -s 16 -o base.qcow2 "$url"
           echo "Fetched $(stat -c %s base.qcow2) bytes in $(( SECONDS - started )) s" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "$(jq -r .vm.sha256 latest.json)  base.qcow2" | sha256sum -c -
-
-      # The guest gets the runner's CPU (-cpu host), and runners differ.
-      - name: Record the runner's CPU
-        run: |
-          lscpu | grep -E '^(Model name|Flags)' | tee -a "$GITHUB_STEP_SUMMARY"
 
       # QEMU runs in an Arch container on the runner's KVM: Arch's current
       # QEMU (11) instead of the runner's older one, the same as

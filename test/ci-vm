@@ -118,17 +118,8 @@ echo "test/ci-vm: tests done after $(seconds) s"
 
 ssh_vm 'cat ~/run.log' >"$out/run.log"
 ssh_vm 'systemd-analyze; systemd-analyze blame | head -25' >"$out/boot.txt" 2>&1 || true
-# Every process that crashed during the run, with what the journal kept of its
-# backtrace: a test that saw only "not responding" names the frame here. The
-# tests turn core files off, so the kernel's own line for each fault, with
-# its instruction pointer and library, comes first.
-ssh_vm 'journalctl -k --no-pager | grep -E "traps:|segfault at|general protection" | tail -40; coredumpctl list --no-pager; for pid in $(coredumpctl list --no-pager --no-legend -F COREDUMP_PID 2>/dev/null); do coredumpctl info --no-pager "$pid" | head -60; done' >"$out/coredumps.txt" 2>&1 || true
 ssh_vm 'echo "source tree: $(cd ~/src/omarchy && git status --porcelain | wc -l) changed files"'
 pull_shell_logs
-# When each file finished, in seconds from the start of ./test/all: where the
-# run's time goes, between the parallel pool and the files that run alone.
-ssh_vm 'start=$(cat ~/started); find "$(sed -n "s/^Logs for every file: //p" ~/run.log | tail -n 1)" -name "*.code" -printf "%T@ %f\n" |
-  awk -v start="$start" "{ printf \"%7.1f %s\\n\", \$1 - start, \$2 }" | sort -n' >"$out/finished.txt" || true
 
 sed -n '/^Skipped checks in/,$p' "$out/run.log"
 # The tests' verdict is the run's verdict.
