@@ -42,11 +42,13 @@ jobs:
 
       # The image of the current release: an installed Omarchy with user
       # omarchy, built and boot-tested by omarchy-iso. It is fetched from
-      # Cloudflare on every run: on eight runners that took 15-37 s (p50 34
-      # s), against 27-62 s (p50 50 s) to restore it from the Actions cache.
+      # Cloudflare on every run, into RAM: runners write their disk at 200
+      # or 400 MB/s, which bound the fetch to 15-31 s, and /dev/shm took it
+      # in 7-12 s on eight runners. Restoring it from the Actions cache took
+      # 27-62 s.
       - name: Fetch the VM image
         run: |
-          mkdir -p image && cd image
+          mkdir -p /dev/shm/image && cd /dev/shm/image
           curl -fsS --retry 3 -o latest.json "$SITE/stable/latest.json"
           jq -r '"Image: Omarchy \(.omarchy_version), kernel \(.kernel)"' latest.json | tee -a "$GITHUB_STEP_SUMMARY"
           unpacked=$(jq -r .vm.unpacked latest.json)
@@ -66,7 +68,7 @@ jobs:
       - name: Run the tests in the VM
         run: |
           sudo chmod 0666 /dev/kvm
-          docker run --rm --device /dev/kvm -v "$PWD:/w" -w /w -e VM_STATE_DIR=/tmp \
+          docker run --rm --device /dev/kvm -v "$PWD:/w" -v /dev/shm/image:/image:ro -w /w -e VM_STATE_DIR=/tmp -e MEM=6G \
             ghcr.io/archlinux/archlinux:latest bash -euo pipefail -c '
               # pacman 7 fails every sync on a kernel without Landlock, which
               # these runners have; omarchy-iso does the same.
@@ -83,7 +85,7 @@ jobs:
                 echo "pacman failed, attempt $attempt of 3; trying again in 15 s"; sleep 15
               done
               qemu-system-x86_64 --version | head -n 1
-              src/omarchy/test/ci-vm image src out
+              src/omarchy/test/ci-vm /image src out
             '
 
       # The container ran as root: its output belongs to root until here.
