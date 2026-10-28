@@ -62,12 +62,12 @@ run_one() {
   local name
   name=$(basename "$test")
   local status=0
-  local start before
-  start=$EPOCHREALTIME before=$(times | tail -1)
-  bash "$test" >"$workdir/$name.out" 2>&1 || status=$?
+  local start TIMEFORMAT="%R %U %S"
+  start=$EPOCHREALTIME
+  { time { bash "$test" >"$workdir/$name.out" 2>&1 || status=$?; }; } 2>"$workdir/$name.time"
   echo "$status" >"$workdir/$name.code"
   if [[ -n ${PERF_DIR:-} ]]; then
-    echo "$name $start $EPOCHREALTIME $before $(times | tail -1) $status" >>"$PERF_DIR/files.txt"
+    echo "$name $start $EPOCHREALTIME $(<"$workdir/$name.time") $status" >>"$PERF_DIR/files.txt"
   fi
 }
 perf_mark() { if [[ -n ${PERF_DIR:-} ]]; then echo "$1 $EPOCHREALTIME" >>"$PERF_DIR/phases.txt"; fi; }

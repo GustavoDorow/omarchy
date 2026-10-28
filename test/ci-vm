@@ -115,7 +115,7 @@ fi
 # default/bash/env-bootstrap puts it: the tests call commands by name, and the
 # commands read their files from OMARCHY_PATH. The installed release has
 # neither the commands nor the files added since.
-command='export OMARCHY_PATH=~/src/omarchy PATH=~/src/omarchy/bin:$PATH PERF_DIR=/tmp/omarchy-test-shell.perf; cd ~/src/omarchy && date +%s.%N >~/started && mkdir -p $PERF_DIR && { nproc; grep -m1 "model name" /proc/cpuinfo; } >$PERF_DIR/machine.txt && { python3 test/perf-sampler.py $PERF_DIR/sampler.txt & sampler=$!; } && ./test/all >~/run.log 2>&1; rc=$?; kill $sampler; wait $sampler; echo "rc=$rc" >>~/run.log'
+command='export OMARCHY_PATH=~/src/omarchy PATH=~/src/omarchy/bin:$PATH PERF_DIR=/tmp/omarchy-test-shell.perf; cd ~/src/omarchy && date +%s.%N >~/started && mkdir -p $PERF_DIR && { nproc; grep -m1 "model name" /proc/cpuinfo; } >$PERF_DIR/machine.txt && { python3 test/perf-sampler.py $PERF_DIR/sampler.txt & sampler=$!; } && ./test/all >~/run.log 2>&1; rc=$?; kill $sampler; wait $sampler; bash test/perf-alone.sh >$PERF_DIR/alone.txt 2>&1; echo "rc=$rc" >>~/run.log'
 ssh_vm "systemd-run --user --quiet --collect --same-dir \
   -E OMARCHY_PKGS_PATH=\$HOME/src/omarchy-pkgs bash -c $(printf %q "$command")"
 last_report="" next_report=0
