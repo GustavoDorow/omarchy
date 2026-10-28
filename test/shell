@@ -62,15 +62,22 @@ run_one() {
   local name
   name=$(basename "$test")
   local status=0
+  local start before
+  start=$EPOCHREALTIME before=$(times | tail -1)
   bash "$test" >"$workdir/$name.out" 2>&1 || status=$?
   echo "$status" >"$workdir/$name.code"
+  if [[ -n ${PERF_DIR:-} ]]; then
+    echo "$name $start $EPOCHREALTIME $before $(times | tail -1) $status" >>"$PERF_DIR/files.txt"
+  fi
 }
+perf_mark() { if [[ -n ${PERF_DIR:-} ]]; then echo "$1 $EPOCHREALTIME" >>"$PERF_DIR/phases.txt"; fi; }
 export -f run_one
 export workdir
 
 # Keep going after a failing file. A test file exits at its first failed
 # assertion, so aborting the run there too would hide every file after it --
 # one packaging failure was masking 114 of 134 files.
+perf_mark shell-start
 overlap_pids=()
 for test in "${overlap_tests[@]}"; do
   run_one "$test" &
@@ -80,6 +87,7 @@ if (( ${#parallel_tests[@]} > 0 )); then
   printf '%s\0' "${parallel_tests[@]}" |
     xargs -0 -P "$(nproc)" -n 1 bash -c 'run_one "$1"' _
 fi
+perf_mark pool-end
 # The overlap jobs must be done before the exclusive chain starts: those
 # files launch full shells on the live compositor, and a shell starting
 # beside the idle guard (the clipboard plugin's watcher pkill, say) can
@@ -87,9 +95,11 @@ fi
 if (( ${#overlap_pids[@]} > 0 )); then
   wait "${overlap_pids[@]}"
 fi
+perf_mark exclusive-start
 for test in "${exclusive_tests[@]}"; do
   run_one "$test"
 done
+perf_mark exclusive-end
 
 failed=()
 skipped=()

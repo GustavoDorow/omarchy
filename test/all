@@ -13,7 +13,9 @@ tests=(
 failed=()
 for test in "${tests[@]}"; do
   printf '==> %s\n' "${test#$ROOT/}"
+  if [[ -n ${PERF_DIR:-} ]]; then echo "${test#$ROOT/}-start $EPOCHREALTIME" >>"$PERF_DIR/phases.txt"; fi
   "$test" || failed+=("${test#$ROOT/}")
+  if [[ -n ${PERF_DIR:-} ]]; then echo "${test#$ROOT/}-end $EPOCHREALTIME" >>"$PERF_DIR/phases.txt"; fi
 done
 
 if (( ${#failed[@]} > 0 )); then
