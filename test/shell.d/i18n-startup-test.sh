@@ -108,7 +108,7 @@ class Probe:
             'XDG_STATE_HOME': str(self.path / 'state'), 'QT_QPA_PLATFORM': 'offscreen',
             'QT_QPA_PLATFORMTHEME': '', 'QT_STYLE_OVERRIDE': 'Fusion', 'QT_QUICK_BACKEND': 'software',
         })
-        self.process = subprocess.Popen(['quickshell', '--no-color', '-p', str(self.config)],
+        self.process = subprocess.Popen(['quickshell', '--no-color', '--log-times', '--log-rules', 'quickshell.io.fileview.debug=true', '-p', str(self.config)],
                                         env=env, stdout=self.log, stderr=subprocess.STDOUT)
 
     def wait(self, expected):
