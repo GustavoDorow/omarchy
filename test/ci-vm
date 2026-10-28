@@ -141,6 +141,8 @@ echo "test/ci-vm: tests done after $(seconds) s"
 
 ssh_vm 'cat ~/run.log' >"$out/run.log"
 ssh_vm 'systemd-analyze; systemd-analyze blame | head -25' >"$out/boot.txt" 2>&1 || true
+# Probe: the guest's kernel log and systemd-oomd's, for processes killed under memory pressure.
+ssh_vm 'journalctl -b -k --no-pager; echo "=== oomd"; journalctl -b -u systemd-oomd --no-pager; echo "=== memory"; free -m; cat /proc/pressure/memory; swapon --show' >"$out/kernel.txt" 2>&1 || true
 ssh_vm 'echo "source tree: $(cd ~/src/omarchy && git status --porcelain | wc -l) changed files"'
 pull_shell_logs
 
