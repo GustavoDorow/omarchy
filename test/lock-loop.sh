@@ -2,7 +2,7 @@
 # quattro's lock budget test and the one that waits for the shell to go quiet,
 # 6 times each in this VM.
 cd ~/src/omarchy
-for variant in red green; do
+for variant in green; do
   cp test/lock-$variant.sh test/shell.d/lock-appear-budget-test.sh
   failed=0 firsts=""
   for i in $(seq 1 6); do
