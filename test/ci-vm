@@ -28,6 +28,12 @@ ssh_vm() {
     -o ControlMaster=auto -o ControlPath="$state/ssh.sock" -o ControlPersist=600 omarchy@127.0.0.1 "$@"
 }
 seconds() { echo $(( SECONDS - started )); }
+# Every test file's log. test/shell prints them into run.log only once all
+# files have finished, so after a hang these are the only output there is.
+pull_shell_logs() {
+  ssh_vm 'mkdir -p ~/shell-logs && find /tmp -maxdepth 1 -name "omarchy-test-shell.*" -newer ~/started -exec cp -r {} ~/shell-logs/ \; && tar cf - -C ~ shell-logs' |
+    tar xf - --no-same-owner -C "$out" || true
+}
 cleanup() {
   ssh -o ControlPath="$state/ssh.sock" -O exit omarchy@127.0.0.1 2>/dev/null || true
   if [[ -f $state/qemu.pid ]]; then
@@ -102,6 +108,7 @@ until ssh_vm 'grep -q "^rc=" ~/run.log' 2>/dev/null; do
   if (( $(seconds) >= ${CI_VM_TIMEOUT:-1500} )); then
     echo "test/ci-vm: the tests did not finish in ${CI_VM_TIMEOUT:-1500} s" >&2
     ssh_vm 'cat ~/run.log' >"$out/run.log" || true
+    pull_shell_logs
     exit 1
   else
     sleep 2
@@ -117,7 +124,7 @@ ssh_vm 'systemd-analyze; systemd-analyze blame | head -25' >"$out/boot.txt" 2>&1
 # its instruction pointer and library, comes first.
 ssh_vm 'journalctl -k --no-pager | grep -E "traps:|segfault at|general protection" | tail -40; coredumpctl list --no-pager; for pid in $(coredumpctl list --no-pager --no-legend -F COREDUMP_PID 2>/dev/null); do coredumpctl info --no-pager "$pid" | head -60; done' >"$out/coredumps.txt" 2>&1 || true
 ssh_vm 'echo "source tree: $(cd ~/src/omarchy && git status --porcelain | wc -l) changed files"'
-ssh_vm 'cp -r "$(sed -n "s/^Logs for every file: //p" ~/run.log | tail -n 1)" ~/shell-logs && tar cf - -C ~ shell-logs' | tar xf - -C "$out" || true
+pull_shell_logs
 # When each file finished, in seconds from the start of ./test/all: where the
 # run's time goes, between the parallel pool and the files that run alone.
 ssh_vm 'start=$(cat ~/started); find "$(sed -n "s/^Logs for every file: //p" ~/run.log | tail -n 1)" -name "*.code" -printf "%T@ %f\n" |
