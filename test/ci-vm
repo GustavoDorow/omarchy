@@ -34,6 +34,20 @@ pull_shell_logs() {
   ssh_vm 'mkdir -p ~/shell-logs && find /tmp -maxdepth 1 -name "omarchy-test-shell.*" -newer ~/started -exec cp -r {} ~/shell-logs/ \; && tar cf - -C ~ shell-logs' |
     tar xf - --no-same-owner -C "$out" || true
 }
+# test/shell prints each file's output only once every file has finished, so
+# meanwhile report from its log directory, where each file leaves a .code file
+# the moment it ends: how many are done, and which have failed so far.
+shell_progress() {
+  ssh_vm 'total=$(( $(ls ~/src/omarchy/test/shell.d/*-test.sh | wc -l) - 1 ))
+    dir=$(for d in $(find /tmp -maxdepth 1 -name "omarchy-test-shell.*" -newer ~/started); do
+      echo "$(find "$d" -maxdepth 1 -name "*.code" | wc -l) $d"
+    done | sort -rn | head -n 1 | cut -d" " -f2)
+    if [[ -n $dir ]]; then
+      finished=$(find "$dir" -maxdepth 1 -name "*.code" | wc -l)
+      failed=$(grep -Lx 0 "$dir"/*.code 2>/dev/null | xargs -r -n 1 basename | sed "s/\.code$//" | tr "\n" " " | sed "s/ $//")
+      echo "$finished of $total test files done${failed:+; failed so far: $failed}"
+    fi'
+}
 cleanup() {
   ssh -o ControlPath="$state/ssh.sock" -O exit omarchy@127.0.0.1 2>/dev/null || true
   if [[ -f $state/qemu.pid ]]; then
@@ -104,6 +118,7 @@ fi
 command='export OMARCHY_PATH=~/src/omarchy PATH=~/src/omarchy/bin:$PATH; cd ~/src/omarchy && date +%s.%N >~/started && ./test/all >~/run.log 2>&1; echo "rc=$?" >>~/run.log'
 ssh_vm "systemd-run --user --quiet --collect --same-dir \
   -E OMARCHY_PKGS_PATH=\$HOME/src/omarchy-pkgs bash -c $(printf %q "$command")"
+last_report="" next_report=0
 until ssh_vm 'grep -q "^rc=" ~/run.log' 2>/dev/null; do
   if (( $(seconds) >= ${CI_VM_TIMEOUT:-1500} )); then
     echo "test/ci-vm: the tests did not finish in ${CI_VM_TIMEOUT:-1500} s" >&2
@@ -111,6 +126,14 @@ until ssh_vm 'grep -q "^rc=" ~/run.log' 2>/dev/null; do
     pull_shell_logs
     exit 1
   else
+    if (( $(seconds) >= next_report )); then
+      report=$(shell_progress 2>/dev/null || true)
+      if [[ -n $report && $report != "$last_report" ]]; then
+        echo "test/ci-vm: $report after $(seconds) s"
+        last_report=$report
+      fi
+      next_report=$(( $(seconds) + 15 ))
+    fi
     sleep 2
   fi
 done
