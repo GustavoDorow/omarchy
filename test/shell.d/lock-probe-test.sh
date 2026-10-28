@@ -66,6 +66,8 @@ for round in 1 2 3; do
   [[ -n $ready_ms ]] || { sed -n '1,120p' "$SCRATCH_LOG" >&2; fail "lock service becomes available"; }
   if [[ -z $ready_best ]] || (( ready_ms < ready_best )); then ready_best=$ready_ms; fi
 
+  echo "PROBE round $round layers at ready: $(hyprctl -j layers | jq -r --argjson pid "$SCRATCH_PID" '[.. | objects | select(.pid? == $pid) | "\(.namespace) \(.w)x\(.h)"] | join(", ")')" >&2
+  if [[ -n ${PROBE_SETTLE:-} ]]; then sleep "$PROBE_SETTLE"; fi
   before=$(wc -l <"$SCRATCH_LOG")
   elapsed=$(appear_ms) || { sed -n '1,120p' "$SCRATCH_LOG" >&2; fail "lock preview appears and hides cleanly"; }
   echo "PROBE round $round first=${elapsed}ms" >&2
