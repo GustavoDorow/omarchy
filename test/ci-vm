@@ -57,8 +57,12 @@ qemu-system-x86_64 -cpu host -enable-kvm -machine q35,accel=kvm -smp "${SMP:-4}"
   -pidfile "$state/qemu.pid" -daemonize
 
 until CONNECT_TIMEOUT=1 ssh_vm true 2>/dev/null; do
-  (( $(seconds) < 300 )) || { echo "test/ci-vm: no SSH after 300 s" >&2; exit 1; }
-  sleep 0.3
+  if (( $(seconds) >= 300 )); then
+    echo "test/ci-vm: no SSH after 300 s" >&2
+    exit 1
+  else
+    sleep 0.3
+  fi
 done
 echo "test/ci-vm: SSH after $(seconds) s"
 
@@ -68,15 +72,21 @@ echo "test/ci-vm: SSH after $(seconds) s"
 # The tests keep the environment they start with, so wait for the session to
 # publish its compositor.
 until ssh_vm 'systemctl --user show-environment | grep -q ^HYPRLAND_INSTANCE_SIGNATURE='; do
-  (( $(seconds) < 300 )) || { echo "test/ci-vm: no desktop session after 300 s" >&2; exit 1; }
-  sleep 0.3
+  if (( $(seconds) >= 300 )); then
+    echo "test/ci-vm: no desktop session after 300 s" >&2
+    exit 1
+  else
+    sleep 0.3
+  fi
 done
 echo "test/ci-vm: sources copied and desktop up after $(seconds) s"
 
 # Nobody touches this machine, and after a few minutes without input Omarchy
 # turns the screen off. The tests that read the screen then read black.
-ssh_vm 'systemd-run --user --quiet --collect --wait omarchy-toggle-idle stay-awake' >/dev/null ||
-  { echo "test/ci-vm: could not keep the session awake" >&2; exit 1; }
+if ! ssh_vm 'systemd-run --user --quiet --collect --wait omarchy-toggle-idle stay-awake' >/dev/null; then
+  echo "test/ci-vm: could not keep the session awake" >&2
+  exit 1
+fi
 
 # From the user manager: what an Omarchy terminal sees, with default signals.
 # A session whose OMARCHY_PATH is this checkout, with its bin/ first as
@@ -87,8 +97,13 @@ command='export OMARCHY_PATH=~/src/omarchy PATH=~/src/omarchy/bin:$PATH; cd ~/sr
 ssh_vm "systemd-run --user --quiet --collect --same-dir \
   -E OMARCHY_PKGS_PATH=\$HOME/src/omarchy-pkgs bash -c $(printf %q "$command")"
 until ssh_vm 'grep -q "^rc=" ~/run.log' 2>/dev/null; do
-  (( $(seconds) < ${CI_VM_TIMEOUT:-1500} )) || { echo "test/ci-vm: the tests did not finish in ${CI_VM_TIMEOUT:-1500} s" >&2; ssh_vm 'cat ~/run.log' >"$out/run.log" || true; exit 1; }
-  sleep 2
+  if (( $(seconds) >= ${CI_VM_TIMEOUT:-1500} )); then
+    echo "test/ci-vm: the tests did not finish in ${CI_VM_TIMEOUT:-1500} s" >&2
+    ssh_vm 'cat ~/run.log' >"$out/run.log" || true
+    exit 1
+  else
+    sleep 2
+  fi
 done
 echo "test/ci-vm: tests done after $(seconds) s"
 
