@@ -21,11 +21,12 @@ REOPEN_BUDGET_MS=$(( ${OMARCHY_LOCK_REAPPEAR_BUDGET_MS:-150} * SPEED_PERCENT / 1
 
 setup_scratch_shell
 
-# Probe: the scratch shell logs every frame's render timing and its GL renderer.
+# Probe: timestamped log with frame timing, and marks on the same clock.
 start_scratch_shell() {
-  (scratch_exec quickshell -p "$SCRATCH_ROOT/shell" --no-color --log-rules "qt.scenegraph.time.renderloop=true;qt.scenegraph.general=true;qt.rhi.general=true") >"$SCRATCH_LOG" 2>&1 &
+  (scratch_exec quickshell -p "$SCRATCH_ROOT/shell" --no-color --log-times --log-rules "qt.scenegraph.time.renderloop=true") >"$SCRATCH_LOG" 2>&1 &
   SCRATCH_PID=$!
 }
+mark() { echo "PROBE $(date '+%F %T.%3N') MARK $*" >&2; }
 
 appear_ms() {
   local start end
@@ -38,6 +39,35 @@ appear_ms() {
   wait_scratch_layer omarchy-lock-preview absent || return 1
 }
 
+# CPU time the scratch shell has used, in clock ticks, its render threads
+# included: utime and stime, the 14th and 15th fields of its stat.
+scratch_cpu_ticks() {
+  local stat fields
+  stat=$(</proc/"$SCRATCH_PID"/stat) || return 1
+  read -r -a fields <<<"${stat##*) }"
+  echo $(( fields[11] + fields[12] ))
+}
+
+# The lock service answers while the shell is still drawing its first frames
+# of the wallpaper, bar and dock. A GPU draws them in milliseconds; Mesa's
+# software renderer takes a second or two, and a lock timed meanwhile waits
+# for those frames. Wait until the shell uses at most one tick of CPU in
+# 200ms, for at most 10s, so only the lock is timed.
+wait_scratch_quiet() {
+  local last="" now
+  for _ in {0..50}; do
+    if ! now=$(scratch_cpu_ticks); then
+      sed -n '1,120p' "$SCRATCH_LOG" >&2
+      fail "scratch shell keeps running while it settles"
+    elif [[ -n $last ]] && (( now - last <= 1 )); then
+      return 0
+    else
+      last=$now
+      sleep 0.2
+    fi
+  done
+}
+
 # The view build and the first appearance happen once per shell start, so
 # each of their samples is a cold start; the reappearances are timed on the
 # last shell.
@@ -47,15 +77,21 @@ reopen_best=""
 for round in 1 2 3; do
   (( round == 1 )) || { stop_scratch_shell; reset_scratch_home; }
   launch_start=$EPOCHREALTIME
+  mark "round $round launch"
   start_scratch_shell
   wait_scratch_shell
+  mark "round $round ping answered"
 
   # The lock handler answers once its service is registered, which is
   # after the service's LockView has been built: this measurement
   # includes view construction, the reappearances only show/hide it.
   ready_ms=""
   for _ in {1..80}; do
-    if [[ $(scratch_ipc lock status 2>/dev/null || true) == '{"locked":'* ]]; then
+    poll_start=$EPOCHREALTIME
+    status=$(scratch_ipc lock status 2>&1 || true)
+    poll_end=$EPOCHREALTIME
+    mark "round $round lock status took $(( (${poll_end/[.,]/} - ${poll_start/[.,]/}) / 1000 ))ms: ${status:0:60}"
+    if [[ $status == '{"locked":'* ]]; then
       end=$EPOCHREALTIME
       ready_ms=$(( (${end/[.,]/} - ${launch_start/[.,]/}) / 1000 ))
       break
@@ -65,14 +101,11 @@ for round in 1 2 3; do
   done
   [[ -n $ready_ms ]] || { sed -n '1,120p' "$SCRATCH_LOG" >&2; fail "lock service becomes available"; }
   if [[ -z $ready_best ]] || (( ready_ms < ready_best )); then ready_best=$ready_ms; fi
+  mark "round $round ready_ms=$ready_ms"
+  if (( round == 1 )); then grep -vE "^\s*$" "$SCRATCH_LOG" | sed 's/^/PROBE LOG /' | cut -c1-260 >&2; fi
 
-  echo "PROBE round $round layers at ready: $(hyprctl -j layers | jq -r --argjson pid "$SCRATCH_PID" '[.. | objects | select(.pid? == $pid) | "\(.namespace) \(.w)x\(.h)"] | join(", ")')" >&2
-  if [[ -n ${PROBE_SETTLE:-} ]]; then sleep "$PROBE_SETTLE"; fi
-  before=$(wc -l <"$SCRATCH_LOG")
+  wait_scratch_quiet
   elapsed=$(appear_ms) || { sed -n '1,120p' "$SCRATCH_LOG" >&2; fail "lock preview appears and hides cleanly"; }
-  echo "PROBE round $round first=${elapsed}ms" >&2
-  if (( round == 1 )); then grep -m3 -iE "GL_RENDERER|renderer:|Adapter|backend" "$SCRATCH_LOG" | sed 's/^/PROBE   /' >&2 || true; fi
-  tail -n +$(( before + 1 )) "$SCRATCH_LOG" | grep -iE "frame rendered|render=|time in" | head -6 | sed 's/^/PROBE   /' >&2 || true
   if [[ -z $first_best ]] || (( elapsed < first_best )); then first_best=$elapsed; fi
 done
 
