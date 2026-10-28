@@ -22,7 +22,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [1, 2, 3]
+        include:
+          - { runner: 1, order: "off on" }
+          - { runner: 2, order: "on off" }
+          - { runner: 3, order: "off on" }
+          - { runner: 4, order: "on off" }
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     env:
@@ -70,7 +74,7 @@ jobs:
       - name: Run the tests in the VM
         run: |
           sudo chmod 0666 /dev/kvm
-          docker run --rm --device /dev/kvm -v "$PWD:/w" -v /dev/shm/image:/image:ro -w /w -e VM_STATE_DIR=/tmp -e MEM=6G \
+          docker run --rm --device /dev/kvm -v "$PWD:/w" -v /dev/shm/image:/image:ro -w /w -e VM_STATE_DIR=/tmp -e MEM=6G -e ORDER="${{ matrix.order }}" \
             ghcr.io/archlinux/archlinux:latest bash -euo pipefail -c '
               # pacman 7 fails every sync on a kernel without Landlock, which
               # these runners have; omarchy-iso does the same.
@@ -93,7 +97,13 @@ jobs:
                 fi
               done
               qemu-system-x86_64 --version | head -n 1
-              src/omarchy/test/ci-vm /image src out
+              for variant in $ORDER; do
+                if [[ $variant == on ]]; then
+                  PREALLOC=1 src/omarchy/test/ci-vm /image src out/$variant
+                else
+                  src/omarchy/test/ci-vm /image src out/$variant
+                fi
+              done
             '
 
       # The container ran as root: its output belongs to root until here.
