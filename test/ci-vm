@@ -30,7 +30,9 @@ ssh_vm() {
 seconds() { echo $(( SECONDS - started )); }
 cleanup() {
   ssh -o ControlPath="$state/ssh.sock" -O exit omarchy@127.0.0.1 2>/dev/null || true
-  [[ -f $state/qemu.pid ]] && kill "$(cat "$state/qemu.pid")" 2>/dev/null
+  if [[ -f $state/qemu.pid ]]; then
+    kill "$(cat "$state/qemu.pid")" 2>/dev/null || true
+  fi
   rm -rf "$state"
 }
 trap cleanup EXIT
