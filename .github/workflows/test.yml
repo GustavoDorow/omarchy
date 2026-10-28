@@ -62,6 +62,11 @@ jobs:
           echo "Fetched $(stat -c %s base.qcow2) bytes in $(( SECONDS - started )) s" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "$(jq -r .vm.sha256 latest.json)  base.qcow2" | sha256sum -c -
 
+      # The guest gets the runner's CPU (-cpu host), and runners differ.
+      - name: Record the runner's CPU
+        run: |
+          lscpu | grep -E '^(Model name|Flags)' | tee -a "$GITHUB_STEP_SUMMARY"
+
       # QEMU runs in an Arch container on the runner's KVM: Arch's current
       # QEMU (11) instead of the runner's older one, the same as
       # omarchy-iso's install test and an Omarchy workstation.
