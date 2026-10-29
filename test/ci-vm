@@ -115,11 +115,13 @@ fi
 # default/bash/env-bootstrap puts it: the tests call commands by name, and the
 # commands read their files from OMARCHY_PATH. The installed release has
 # neither the commands nor the files added since.
-command='export OMARCHY_PATH=~/src/omarchy PATH=~/src/omarchy/bin:$PATH; cd ~/src/omarchy && date +%s.%N >~/started && ./test/all >~/run.log 2>&1; echo "rc=$?" >>~/run.log'
+# The exit status goes to a file of its own, renamed into place whole: the
+# tests print lines like "rc=0" themselves, so the log cannot carry it.
+command='export OMARCHY_PATH=~/src/omarchy PATH=~/src/omarchy/bin:$PATH; cd ~/src/omarchy && date +%s.%N >~/started && ./test/all >~/run.log 2>&1; echo "$?" >~/rc.next && mv ~/rc.next ~/rc'
 ssh_vm "systemd-run --user --quiet --collect --same-dir \
   -E OMARCHY_PKGS_PATH=\$HOME/src/omarchy-pkgs bash -c $(printf %q "$command")"
 last_report="" next_report=0
-until ssh_vm 'grep -q "^rc=" ~/run.log' 2>/dev/null; do
+until ssh_vm '[[ -s ~/rc ]]' 2>/dev/null; do
   if (( $(seconds) >= ${CI_VM_TIMEOUT:-1500} )); then
     echo "test/ci-vm: the tests did not finish in ${CI_VM_TIMEOUT:-1500} s" >&2
     ssh_vm 'cat ~/run.log' >"$out/run.log" || true
@@ -139,11 +141,13 @@ until ssh_vm 'grep -q "^rc=" ~/run.log' 2>/dev/null; do
 done
 echo "test/ci-vm: tests done after $(seconds) s"
 
+rc=$(ssh_vm 'cat ~/rc')
 ssh_vm 'cat ~/run.log' >"$out/run.log"
+echo "rc=$rc" >>"$out/run.log"
 ssh_vm 'systemd-analyze; systemd-analyze blame | head -25' >"$out/boot.txt" 2>&1 || true
 ssh_vm 'echo "source tree: $(cd ~/src/omarchy && git status --porcelain | wc -l) changed files"'
 pull_shell_logs
 
 sed -n '/^Skipped checks in/,$p' "$out/run.log"
 # The tests' verdict is the run's verdict.
-grep -qx 'rc=0' "$out/run.log"
+[[ $rc == "0" ]]
